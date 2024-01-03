@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -48,19 +50,114 @@ func (cfg *config) runCmd(r io.Reader, w io.Writer) error {
 	case hFlagLong:
 		cfg.printUsage(w)
 	case cFlag:
-		fmt.Println("handle '-c command'")
+		numBytes, err := cfg.handleCFlag(w)
+		if err != nil {
+			return fmt.Errorf("flag %s in run cmd: %w", cFlag, err)
+		}
+		fmt.Fprintf(w, "%d %s\n", numBytes, cfg.fileName)
 	case mFlag:
-		fmt.Println("handle '-m command'")
+		numChars, err := cfg.handleMCmd(w)
+		if err != nil {
+			return fmt.Errorf("flag %s in run cmd: %w", mFlag, err)
+		}
+		fmt.Fprintf(w, "%d %s\n", numChars, cfg.fileName)
 	case lFlag:
-		fmt.Println("handle '-l command'")
+		numLines, err := cfg.handleLFlag(w)
+		if err != nil {
+			return fmt.Errorf("flag %s in run cmd: %w", lFlag, err)
+		}
+		fmt.Fprintf(w, "%d %s\n", numLines, cfg.fileName)
 	case wFlag:
-		fmt.Println("handle '-w command'")
+		wordLength, err := cfg.handleWCmd(w)
+		if err != nil {
+			return fmt.Errorf("flag %s in run cmd: %w", wFlag, err)
+		}
+		fmt.Fprintf(w, "%d %s\n", wordLength, cfg.fileName)
 	default:
-		fmt.Println("handle base case")
+		numBytes, numLines, wordLength, err := cfg.handleBaseCase(w)
+		if err != nil {
+			return fmt.Errorf("base case in run cmd: %w", err)
+		}
+		fmt.Fprintf(w, "%d %d %d %s\n", numBytes, numLines, wordLength, cfg.fileName)
+
 	}
 
 	return err
 
+}
+
+func (cfg *config) handleBaseCase(w io.Writer) (int64, int64, int64, error) {
+	var numBytes int64
+	var numLines int64
+	var wordLength int64
+
+	numBytes, err := cfg.handleCFlag(w)
+	if err != nil {
+		return numBytes, numLines, wordLength, fmt.Errorf("base case: %w", err)
+	}
+
+	numLines, err = cfg.handleLFlag(w)
+	if err != nil {
+		return numBytes, numLines, wordLength, fmt.Errorf("base case: %w", err)
+	}
+
+	wordLength, err = cfg.handleWCmd(w)
+	if err != nil {
+		return numBytes, numLines, wordLength, fmt.Errorf("base case: %w", err)
+	}
+
+	return numBytes, numLines, wordLength, nil
+}
+
+func (cfg *config) handleCFlag(w io.Writer) (int64, error) {
+	b, err := os.ReadFile(cfg.fileName)
+	if err != nil {
+		return 0, fmt.Errorf("handle c flag %w", err)
+	}
+	return int64(len(b)), nil
+}
+
+func (cfg *config) handleLFlag(w io.Writer) (int64, error) {
+	var lineNum int64
+	f, err := os.Open(cfg.fileName)
+	if err != nil {
+		return lineNum, fmt.Errorf("handle l flag: %w", err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lineNum++
+	}
+	return lineNum, nil
+}
+
+func (cfg *config) handleWCmd(w io.Writer) (int64, error) {
+	var wordLength int
+	f, err := os.Open(cfg.fileName)
+	if err != nil {
+		return int64(wordLength), fmt.Errorf("handle w flag: %w", err)
+	}
+	defer f.Close()
+	lineNum := 0
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		words := strings.Fields(line)
+		wordLength += len(words)
+		lineNum++
+	}
+	return int64(wordLength), nil
+}
+
+func (cfg *config) handleMCmd(w io.Writer) (int64, error) {
+	b, err := os.ReadFile(cfg.fileName)
+	if err != nil {
+		return 0, fmt.Errorf("handle c flag %w", err)
+	}
+	return int64(utf8.RuneCountInString(string(b))), nil
 }
 
 func (cfg *config) validateArgs(w io.Writer) (*config, error) {
@@ -72,9 +169,9 @@ func (cfg *config) validateArgs(w io.Writer) (*config, error) {
 	}
 
 	if fs.NArg() == 2 {
-		for k, _ := range allowedFlags {
+		for k := range allowedFlags {
 			if fs.Arg(1) == k && fs.Arg(1) != hFlag && fs.Arg(1) != hFlagLong {
-				return cfg, ErrInvalidCommand
+				return nil, ErrInvalidCommand
 			}
 		}
 		cfg.fileName = fs.Arg(1)
@@ -82,7 +179,7 @@ func (cfg *config) validateArgs(w io.Writer) (*config, error) {
 		return cfg, nil
 	}
 	if fs.NArg() == 3 {
-		for k, _ := range allowedFlags {
+		for k := range allowedFlags {
 			if fs.Arg(1) == k {
 				cfg.cmd = fs.Arg(1)
 				cfg.fileName = fs.Arg(2)

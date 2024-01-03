@@ -18,6 +18,7 @@ const (
 	wFlag     = "-w"
 	hFlag     = "-h"
 	hFlagLong = "--help"
+	stdIn     = "stdIn"
 	name      = "ccwc"
 )
 
@@ -163,33 +164,37 @@ func (cfg *config) handleMCmd(w io.Writer) (int64, error) {
 func (cfg *config) validateArgs(w io.Writer) (*config, error) {
 	fs := cfg.flagSet
 
-	if fs.NArg() == 1 {
-		cfg.printUsage(w)
-		return nil, ErrEmptyArg
-	}
-
-	if fs.NArg() == 2 {
-		for k := range allowedFlags {
-			if fs.Arg(1) == k && fs.Arg(1) != hFlag && fs.Arg(1) != hFlagLong {
-				return nil, ErrInvalidCommand
-			}
-		}
-		cfg.fileName = fs.Arg(1)
-		cfg.cmd = fs.Arg(1)
+	if len(cfg.fileName) > 0 {
 		return cfg, nil
-	}
-	if fs.NArg() == 3 {
-		for k := range allowedFlags {
-			if fs.Arg(1) == k {
-				cfg.cmd = fs.Arg(1)
-				cfg.fileName = fs.Arg(2)
-				return cfg, nil
-			}
+	} else {
+		if fs.NArg() == 1 {
+			cfg.printUsage(w)
+			return nil, ErrEmptyArg
 		}
-		return nil, ErrInvalidCommand
-	}
-	if fs.NArg() > 3 {
-		return nil, ErrInvalidPosArgSpecified
+
+		if fs.NArg() == 2 {
+			for k := range allowedFlags {
+				if fs.Arg(1) == k && fs.Arg(1) != hFlag && fs.Arg(1) != hFlagLong {
+					return nil, ErrInvalidCommand
+				}
+			}
+			cfg.fileName = fs.Arg(1)
+			cfg.cmd = fs.Arg(1)
+			return cfg, nil
+		}
+		if fs.NArg() == 3 {
+			for k := range allowedFlags {
+				if fs.Arg(1) == k {
+					cfg.cmd = fs.Arg(1)
+					cfg.fileName = fs.Arg(2)
+					return cfg, nil
+				}
+			}
+			return nil, ErrInvalidCommand
+		}
+		if fs.NArg() > 3 {
+			return nil, ErrInvalidPosArgSpecified
+		}
 	}
 
 	return cfg, nil
@@ -237,7 +242,7 @@ func init() {
 }
 
 func main() {
-	cfg := &config{
+	var cfg *config = &config{
 		args:    allowedFlags,
 		flagSet: flag.NewFlagSet(name, flag.ContinueOnError),
 	}
